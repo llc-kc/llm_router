@@ -1,0 +1,20 @@
+# 每行最大字符数（默认 100）
+max_width = 120
+# 缩进的空格数（默认 4）
+tab_spaces = 4
+# 函数参数换行规则（参数过多时垂直排列）
+fn_params_layout = "Tall"
+# 指定使用 Rust 2021 版本
+edition = "2021"
+# 自动重新排序导入语句
+reorder_imports = true
+# 自动重新排序模块
+reorder_modules = true
+# 移除不必要的嵌套括号
+remove_nested_parens = true
+# 当变量名与字段名相同时使用简写形式
+use_field_init_shorthand = true
+# 强制显式指定 ABI
+force_explicit_abi = true
+# 在 match 块中使用尾随逗号
+match_block_trailing_comma = true
