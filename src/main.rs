@@ -54,6 +54,88 @@ struct AppState {
     round_robin_counter: Arc<Mutex<usize>>,
 }
 
+async fn handle_mirror_mode(
+    client: &reqwest::Client,
+    targets: &[Target],
+    endpoint: &str,
+    request_value: &serde_json::Value,
+) -> axum::Json<serde_json::Value> {
+    // 镜像模式：全部分流到每个目标，只返回第一个结果
+    let mut responses = Vec::new();
+    for target in targets {
+        let url = target.to_url(endpoint);
+        match client.post(&url).json(request_value).send().await {
+            Ok(resp) => {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    responses.push(json);
+                }
+            },
+            Err(e) => {
+                eprintln!("Error forwarding to {}: {}", url, e);
+            },
+        }
+    }
+
+    if let Some(first_response) = responses.first() {
+        axum::Json(first_response.clone())
+    } else {
+        axum::Json(serde_json::json!({
+            "error": "No successful responses from targets"
+        }))
+    }
+}
+
+fn select_target(
+    targets: &[Target],
+    strategy: &str,
+    round_robin_counter: &Arc<Mutex<usize>>,
+) -> Target {
+    match strategy {
+        "round_robin" => {
+            let mut counter = round_robin_counter.lock().unwrap();
+            let index = *counter % targets.len();
+            *counter += 1;
+            targets[index].clone()
+        },
+        "random" => {
+            let index = rand::thread_rng().gen_range(0..targets.len());
+            targets[index].clone()
+        },
+        _ => targets[0].clone(),
+    }
+}
+
+async fn handle_split_mode(
+    client: &reqwest::Client,
+    targets: &[Target],
+    endpoint: &str,
+    request_value: &serde_json::Value,
+    strategy: &str,
+    round_robin_counter: &Arc<Mutex<usize>>,
+) -> axum::Json<serde_json::Value> {
+    // 分流模式：根据策略选择目标
+    let selected_target = select_target(targets, strategy, round_robin_counter);
+
+    let url = selected_target.to_url(endpoint);
+    match client.post(&url).json(request_value).send().await {
+        Ok(resp) => {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                axum::Json(json)
+            } else {
+                axum::Json(serde_json::json!({
+                    "error": "Failed to parse response from target"
+                }))
+            }
+        },
+        Err(e) => {
+            eprintln!("Error forwarding to {}: {}", url, e);
+            axum::Json(serde_json::json!({
+                "error": format!("Failed to forward request: {}", e)
+            }))
+        },
+    }
+}
+
 async fn handle_chat_completions(
     State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<ChatCompletionRequest>,
@@ -72,66 +154,8 @@ async fn handle_chat_completions(
     let request_value = serde_json::to_value(request).unwrap();
 
     match state.mode.as_str() {
-        "mirror" => {
-            // 镜像模式：全部分流到每个目标，只返回第一个结果
-            let mut responses = Vec::new();
-            for target in &targets {
-                let url = target.to_url(&endpoint);
-                match client.post(&url).json(&request_value).send().await {
-                    Ok(resp) => {
-                        if let Ok(json) = resp.json::<serde_json::Value>().await {
-                            responses.push(json);
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error forwarding to {}: {}", url, e);
-                    },
-                }
-            }
-
-            if let Some(first_response) = responses.first() {
-                axum::Json(first_response.clone())
-            } else {
-                axum::Json(serde_json::json!({
-                    "error": "No successful responses from targets"
-                }))
-            }
-        },
-        "split" => {
-            // 分流模式：根据策略选择目标
-            let selected_target = match state.strategy.as_str() {
-                "round_robin" => {
-                    let mut counter = state.round_robin_counter.lock().unwrap();
-                    let index = *counter % targets.len();
-                    *counter += 1;
-                    targets[index].clone()
-                },
-                "random" => {
-                    let index = rand::thread_rng().gen_range(0..targets.len());
-                    targets[index].clone()
-                },
-                _ => targets[0].clone(),
-            };
-
-            let url = selected_target.to_url(&endpoint);
-            match client.post(&url).json(&request_value).send().await {
-                Ok(resp) => {
-                    if let Ok(json) = resp.json::<serde_json::Value>().await {
-                        axum::Json(json)
-                    } else {
-                        axum::Json(serde_json::json!({
-                            "error": "Failed to parse response from target"
-                        }))
-                    }
-                },
-                Err(e) => {
-                    eprintln!("Error forwarding to {}: {}", url, e);
-                    axum::Json(serde_json::json!({
-                        "error": format!("Failed to forward request: {}", e)
-                    }))
-                },
-            }
-        },
+        "mirror" => handle_mirror_mode(&client, &targets, &endpoint, &request_value).await,
+        "split" => handle_split_mode(&client, &targets, &endpoint, &request_value, &state.strategy, &state.round_robin_counter).await,
         _ => axum::Json(serde_json::json!({
             "error": "Invalid mode"
         })),
