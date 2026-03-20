@@ -37,13 +37,13 @@ cargo build --release
 
 ```bash
 # 启动镜像模式，将请求分流到多个目标
-./target/release/llm_router --port 8080 --endpoint /v1/chat/completions --targets "127.0.0.1:8000,127.0.0.1:8001" --mode mirror
+./target/release/llm_router --port 8080 --targets "127.0.0.1:8000,127.0.0.1:8001" --mode mirror
 
 # 启动分流模式，使用 round robin 策略
-./target/release/llm_router --port 8080 --endpoint /v1/chat/completions --targets "127.0.0.1:8000,127.0.0.1:8001" --mode split --strategy round_robin
+./target/release/llm_router --port 8080 --targets "127.0.0.1:8000,127.0.0.1:8001" --mode split --strategy round_robin
 
 # 启动分流模式，使用 random 策略
-./target/release/llm_router --port 8080 --endpoint /v1/chat/completions --targets "127.0.0.1:8000,127.0.0.1:8001" --mode split --strategy random
+./target/release/llm_router --port 8080 --targets "127.0.0.1:8000,127.0.0.1:8001" --mode split --strategy random
 ```
 
 ### 命令行参数
@@ -51,7 +51,6 @@ cargo build --release
 | 参数 | 描述 | 默认值 |
 |------|------|--------|
 | `--port` | 输入请求的端口 | 8080 |
-| `--endpoint` | 输入请求的接口路径 | /v1/chat/completions |
 | `--targets` | 输出请求的 IP 和端口，格式为 ip:port，多个用逗号分隔 | 空 |
 | `--mode` | 运行模式：mirror（镜像模式）或 split（分流模式） | mirror |
 | `--strategy` | 分流模式下的负载均衡策略：round_robin 或 random | round_robin |

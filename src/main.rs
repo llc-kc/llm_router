@@ -1,4 +1,4 @@
-use axum::{Router, extract::State, routing::post, serve};
+use axum::{Router, extract::State, routing::{get, post}, serve};
 use clap::Parser;
 use openai_protocol::chat::ChatCompletionRequest;
 use std::net::SocketAddr;
@@ -13,10 +13,6 @@ struct Args {
     /// 输入请求的端口
     #[arg(long, default_value = "8080")]
     port: u16,
-
-    /// 输入请求的接口路径
-    #[arg(long, default_value = "/v1/chat/completions")]
-    endpoint: String,
 
     /// 输出请求的IP和端口，格式为ip:port，多个用逗号分隔
     #[arg(long, default_value = "")]
@@ -33,12 +29,38 @@ struct Args {
 
 struct AppState {
     targets: Arc<Mutex<Vec<Target>>>,
-    endpoint: String,
     mode: String,
     strategy: String,
     round_robin_counter: Arc<Mutex<usize>>,
 }
 
+/// 处理 /generate 请求
+/// SGLang 风格的生成接口
+async fn handle_generate(
+    State(state): State<Arc<AppState>>,
+    axum::Json(request): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let targets = state.targets.lock().unwrap().clone();
+    if targets.is_empty() {
+        return axum::Json(serde_json::json!({
+            "error": "No targets configured"
+        }));
+    }
+
+    let client = reqwest::Client::new();
+    let endpoint = "/generate";
+
+    match state.mode.as_str() {
+        "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request).await,
+        "split" => split::handle_split_mode(&client, &targets, endpoint, &request, &state.strategy, &state.round_robin_counter).await,
+        _ => axum::Json(serde_json::json!({
+            "error": "Invalid mode"
+        })),
+    }
+}
+
+/// 处理 /v1/chat/completions 请求
+/// OpenAI 风格的聊天补全接口
 async fn handle_chat_completions(
     State(state): State<Arc<AppState>>,
     axum::Json(request): axum::Json<ChatCompletionRequest>,
@@ -51,16 +73,83 @@ async fn handle_chat_completions(
     }
 
     let client = reqwest::Client::new();
-    let endpoint = state.endpoint.clone();
+    let endpoint = "/v1/chat/completions";
 
     let request_value = serde_json::to_value(request).unwrap();
 
     match state.mode.as_str() {
-        "mirror" => mirror::handle_mirror_mode(&client, &targets, &endpoint, &request_value).await,
-        "split" => split::handle_split_mode(&client, &targets, &endpoint, &request_value, &state.strategy, &state.round_robin_counter).await,
+        "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request_value).await,
+        "split" => split::handle_split_mode(&client, &targets, endpoint, &request_value, &state.strategy, &state.round_robin_counter).await,
         _ => axum::Json(serde_json::json!({
             "error": "Invalid mode"
         })),
+    }
+}
+
+/// 处理 /v1/completions 请求
+/// OpenAI 风格的文本补全接口
+async fn handle_completions(
+    State(state): State<Arc<AppState>>,
+    axum::Json(request): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let targets = state.targets.lock().unwrap().clone();
+    if targets.is_empty() {
+        return axum::Json(serde_json::json!({
+            "error": "No targets configured"
+        }));
+    }
+
+    let client = reqwest::Client::new();
+    let endpoint = "/v1/completions";
+
+    match state.mode.as_str() {
+        "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request).await,
+        "split" => split::handle_split_mode(&client, &targets, endpoint, &request, &state.strategy, &state.round_robin_counter).await,
+        _ => axum::Json(serde_json::json!({
+            "error": "Invalid mode"
+        })),
+    }
+}
+
+/// 处理 /v1/models 请求
+/// 从第一个 target 获取模型列表并返回
+async fn handle_models(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    let targets = state.targets.lock().unwrap().clone();
+    if targets.is_empty() {
+        return axum::Json(serde_json::json!({
+            "error": "No targets configured"
+        }));
+    }
+
+    let client = reqwest::Client::new();
+    // 从第一个 target 获取模型列表
+    let first_target = &targets[0];
+    let url = first_target.to_url("/v1/models");
+
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<serde_json::Value>().await {
+                    Ok(json) => axum::Json(json),
+                    Err(e) => {
+                        axum::Json(serde_json::json!({
+                            "error": format!("Failed to parse models response: {}", e)
+                        }))
+                    }
+                }
+            } else {
+                axum::Json(serde_json::json!({
+                    "error": format!("Target returned status: {}", response.status())
+                }))
+            }
+        }
+        Err(e) => {
+            axum::Json(serde_json::json!({
+                "error": format!("Failed to fetch models from target: {}", e)
+            }))
+        }
     }
 }
 
@@ -126,20 +215,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let targets = parse_targets(&args.targets);
-    let endpoint = args.endpoint.clone();
     let mode = args.mode.clone();
     let strategy = args.strategy.clone();
 
     let state = Arc::new(AppState {
         targets: Arc::new(Mutex::new(targets)),
-        endpoint: endpoint.clone(),
         mode: mode.clone(),
         strategy: strategy.clone(),
         round_robin_counter: Arc::new(Mutex::new(0)),
     });
 
+    // 自动注册路由端点，无需用户设置参数
     let app = Router::new()
-        .route(&endpoint, post(handle_chat_completions))
+        .route("/generate", post(handle_generate))
+        .route("/v1/chat/completions", post(handle_chat_completions))
+        .route("/v1/completions", post(handle_completions))
+        .route("/v1/models", get(handle_models))
         .route("/api/targets", post(add_target).get(list_targets).delete(remove_target))
         .with_state(state);
 
@@ -149,7 +240,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if mode == "split" {
         println!("Strategy: {}", strategy);
     }
-    println!("Endpoint: {}", endpoint);
+    println!("Available endpoints:");
+    println!("  - POST /generate");
+    println!("  - POST /v1/chat/completions");
+    println!("  - POST /v1/completions");
+    println!("  - GET  /v1/models");
+    println!("  - POST/GET/DELETE /api/targets");
     println!("Initial targets: {:?}", parse_targets(&args.targets));
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
