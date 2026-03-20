@@ -1,11 +1,16 @@
-use axum::{Router, extract::State, routing::{get, post}, serve};
+use axum::{
+    Router,
+    extract::State,
+    routing::{get, post},
+    serve,
+};
 use clap::Parser;
 use openai_protocol::chat::ChatCompletionRequest;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 mod modes;
-use modes::{mirror, split, Target};
+use modes::{Target, mirror, split};
 
 #[derive(Parser, Debug)]
 #[command(version, about = "LLM请求镜像流量router工具")]
@@ -52,7 +57,17 @@ async fn handle_generate(
 
     match state.mode.as_str() {
         "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request).await,
-        "split" => split::handle_split_mode(&client, &targets, endpoint, &request, &state.strategy, &state.round_robin_counter).await,
+        "split" => {
+            split::handle_split_mode(
+                &client,
+                &targets,
+                endpoint,
+                &request,
+                &state.strategy,
+                &state.round_robin_counter,
+            )
+            .await
+        },
         _ => axum::Json(serde_json::json!({
             "error": "Invalid mode"
         })),
@@ -79,7 +94,17 @@ async fn handle_chat_completions(
 
     match state.mode.as_str() {
         "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request_value).await,
-        "split" => split::handle_split_mode(&client, &targets, endpoint, &request_value, &state.strategy, &state.round_robin_counter).await,
+        "split" => {
+            split::handle_split_mode(
+                &client,
+                &targets,
+                endpoint,
+                &request_value,
+                &state.strategy,
+                &state.round_robin_counter,
+            )
+            .await
+        },
         _ => axum::Json(serde_json::json!({
             "error": "Invalid mode"
         })),
@@ -104,7 +129,17 @@ async fn handle_completions(
 
     match state.mode.as_str() {
         "mirror" => mirror::handle_mirror_mode(&client, &targets, endpoint, &request).await,
-        "split" => split::handle_split_mode(&client, &targets, endpoint, &request, &state.strategy, &state.round_robin_counter).await,
+        "split" => {
+            split::handle_split_mode(
+                &client,
+                &targets,
+                endpoint,
+                &request,
+                &state.strategy,
+                &state.round_robin_counter,
+            )
+            .await
+        },
         _ => axum::Json(serde_json::json!({
             "error": "Invalid mode"
         })),
@@ -113,9 +148,7 @@ async fn handle_completions(
 
 /// 处理 /v1/models 请求
 /// 从第一个 target 获取模型列表并返回
-async fn handle_models(
-    State(state): State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse {
+async fn handle_models(State(state): State<Arc<AppState>>) -> impl axum::response::IntoResponse {
     let targets = state.targets.lock().unwrap().clone();
     if targets.is_empty() {
         return axum::Json(serde_json::json!({
@@ -133,23 +166,19 @@ async fn handle_models(
             if response.status().is_success() {
                 match response.json::<serde_json::Value>().await {
                     Ok(json) => axum::Json(json),
-                    Err(e) => {
-                        axum::Json(serde_json::json!({
-                            "error": format!("Failed to parse models response: {}", e)
-                        }))
-                    }
+                    Err(e) => axum::Json(serde_json::json!({
+                        "error": format!("Failed to parse models response: {}", e)
+                    })),
                 }
             } else {
                 axum::Json(serde_json::json!({
                     "error": format!("Target returned status: {}", response.status())
                 }))
             }
-        }
-        Err(e) => {
-            axum::Json(serde_json::json!({
-                "error": format!("Failed to fetch models from target: {}", e)
-            }))
-        }
+        },
+        Err(e) => axum::Json(serde_json::json!({
+            "error": format!("Failed to fetch models from target: {}", e)
+        })),
     }
 }
 

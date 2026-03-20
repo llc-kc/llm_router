@@ -14,10 +14,10 @@ pub async fn handle_mirror_mode(
                 if let Ok(json) = resp.json::<serde_json::Value>().await {
                     responses.push(json);
                 }
-            }
+            },
             Err(e) => {
                 eprintln!("Error forwarding to {}: {}", url, e);
-            }
+            },
         }
     }
 

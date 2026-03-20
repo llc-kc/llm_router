@@ -1,23 +1,19 @@
-use std::sync::{Arc, Mutex};
-use rand::Rng;
 use crate::modes::Target;
+use rand::Rng;
+use std::sync::{Arc, Mutex};
 
-pub fn select_target(
-    targets: &[Target],
-    strategy: &str,
-    round_robin_counter: &Arc<Mutex<usize>>,
-) -> Target {
+pub fn select_target(targets: &[Target], strategy: &str, round_robin_counter: &Arc<Mutex<usize>>) -> Target {
     match strategy {
         "round_robin" => {
             let mut counter = round_robin_counter.lock().unwrap();
             let index = *counter % targets.len();
             *counter += 1;
             targets[index].clone()
-        }
+        },
         "random" => {
             let index = rand::thread_rng().gen_range(0..targets.len());
             targets[index].clone()
-        }
+        },
         _ => targets[0].clone(),
     }
 }
@@ -42,12 +38,12 @@ pub async fn handle_split_mode(
                     "error": "Failed to parse response from target"
                 }))
             }
-        }
+        },
         Err(e) => {
             eprintln!("Error forwarding to {}: {}", url, e);
             axum::Json(serde_json::json!({
                 "error": format!("Failed to forward request: {}", e)
             }))
-        }
+        },
     }
 }
