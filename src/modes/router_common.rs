@@ -13,12 +13,10 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-/// Worker configuration with both token and cache hit rate thresholds
+/// Worker configuration with cache hit rate threshold
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
     pub worker: Worker,
-    /// Maximum token count this worker can handle (inclusive)
-    pub max_token_threshold: usize,
     /// Maximum cache hit rate this worker can handle (inclusive)
     pub max_cache_hit_rate: f32,
     /// Path to tokenizer model for this worker
@@ -26,10 +24,9 @@ pub struct WorkerConfig {
 }
 
 impl WorkerConfig {
-    pub fn new(worker: Worker, max_token_threshold: usize, max_cache_hit_rate: f32, tokenizer_path: String) -> Self {
+    pub fn new(worker: Worker, max_cache_hit_rate: f32, tokenizer_path: String) -> Self {
         Self {
             worker,
-            max_token_threshold,
             max_cache_hit_rate,
             tokenizer_path,
         }
@@ -176,21 +173,6 @@ impl Default for CommonRouter {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Select worker based on token count
-pub fn select_worker_by_token_count(worker_configs: &[WorkerConfig], token_count: usize) -> Option<&Worker> {
-    // Find the first worker whose max_token_threshold >= token_count
-    // Workers should be sorted by threshold in ascending order
-    for config in worker_configs {
-        if token_count <= config.max_token_threshold {
-            log::info!("Selected worker: {:?}, token count: {}", config.worker, token_count);
-            return Some(&config.worker);
-        }
-    }
-
-    // If no worker can handle this token count, return the last one (highest threshold)
-    worker_configs.last().map(|c| &c.worker)
 }
 
 /// Select worker based on cache hit rate
