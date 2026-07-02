@@ -49,16 +49,34 @@ cargo build --release
 
 ```bash
 # 启动镜像模式，将请求分流到多个目标
-./target/release/llm_cahr --port 8080 --workers '[{"url":"http://127.0.0.1:8000"},{"url":"http://127.0.0.1:8001"}]' --mode mirror
+./target/release/llm_cahr \
+--port 8080 \
+--mode mirror \
+--workers '[{"url":"http://localhost:8000"},{"url":"http://localhost:8001"}]'
 
 # 启动分流模式，使用 round robin 策略
-./target/release/llm_cahr --port 8080 --workers '[{"url":"http://127.0.0.1:8000"},{"url":"http://127.0.0.1:8001"}]' --mode split --strategy round_robin
+./target/release/llm_cahr \
+  --port 8080 \
+  --mode split \
+  --strategy round_robin \
+  --workers '[{"url":"http://localhost:8000"},{"url":"http://localhost:8001"}]'
 
 # 启动分流模式，使用 random 策略
-./target/release/llm_cahr --port 8080 --workers '[{"url":"http://127.0.0.1:8000"},{"url":"http://127.0.0.1:8001"},{"url":"http://127.0.0.1:8002"}]' --mode split --strategy random
+./target/release/llm_cahr \
+  --port 8080 \
+  --mode split\
+  --strategy random
+  --workers '[{"url":"http://localhost:8000"},{"url":"http://localhost:8001"}]'\
 
 # 启动缓存路由模式
-./target/release/llm_cahr --port 8080 --workers '[{"url":"http://127.0.0.1:8000","cache_hit_rate":0.8},{"url":"http://127.0.0.1:8001","cache_hit_rate":0.5}]' --mode cache_route --tokenizer-path /path/to/tokenizer --mooncake-url http://mooncake_master_ip:metrics_port --page-size 64
+./target/release/llm_cahr \
+  --port 8080 \
+  --mode cache_route \
+  --page-size 64 \
+  --workers '[{"url":"http://localhost:8000","cache_hit_rate":0.8},{"url":"http://localhost:8001","cache_hit_rate":1.0}]' \
+  --tokenizer-path /path/to/tokenizer \
+  --mooncake-url http://mooncake_master_ip:metrics_port \
+  --log-level info
 ```
 
 ### 命令行参数

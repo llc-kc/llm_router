@@ -1,11 +1,3 @@
-## token length aware routing mode
-need tokenize request body to get token length
-Then route to wokers based on token length configuration
-dynamic configurable token length threshold
-
-## kv cache hit rate aware routing mode
-need merge request body to string and tokenize, then hash and query mooncake to get kv cache hit rate
-Then route to wokers based on kv cache hit rate configuration
 
 dynamic configurable kv cache hit rate threshold
 
@@ -17,13 +9,13 @@ add test codes
 
 can we avoid request - json conversion?
 
-worker health check
-support MHA model
-support pipeline parallelism
-For DeepSeek V3.2, query both kv cache and indexer cache, currently only kv cache
-support 3:1 sparse attention model
+support MHA model: query both k and v cache, currently only k cache and no TP suffix
+currently only support MLA models, such as deepseek, kimi, GLM5
+support query both kv cache and indexer cache, currently only k cache with __k suffix
 
-routing based on both cache hit rate and load balance
+worker health check
+
+routing based on both cache hit rate and load balance, move this to sgl-router
 
 增加token/cache router每个worker (mean, p50, P90, P99等) TTFT, TPOT, 请求长度的统计，实时metric信息，用于判断PD/非PD的路由负载阈值
 
